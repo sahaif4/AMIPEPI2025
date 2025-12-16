@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Sistem Audit Mutu Internal PEPI
 
 Sistem Audit Mutu Internal (AMI) untuk Politeknik Enjiniring Pertanian Indonesia (PEPI).
@@ -208,3 +209,7 @@ Proyek ini dilisensikan di bawah MIT License - lihat file [LICENSE](LICENSE) unt
 **Dibuat dengan ❤️ untuk PEPI**
 
 Last Updated: 16 Desember 2024
+=======
+# AMIPEPI2025
+Aplikasi untuk audit mutu internal PEPI
+>>>>>>> 7e1fa91f906d544de3eaa4ea740c29ab9c2a6ff2
