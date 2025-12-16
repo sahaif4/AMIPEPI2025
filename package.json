@@ -1,0 +1,27 @@
+{
+  "name": "amipepi-audit-system",
+  "version": "1.0.0",
+  "description": "Sistem Audit Mutu Internal - Politeknik Enjiniring Pertanian Indonesia",
+  "main": "index.html",
+  "scripts": {
+    "start": "http-server . -p 8000 -c-1",
+    "build": "echo 'No build needed for this static site'",
+    "deploy": "git push origin main"
+  },
+  "keywords": [
+    "audit",
+    "mutu",
+    "internal",
+    "PEPI",
+    "politeknik"
+  ],
+  "author": "PEPI",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sahaif4/AMIPEPI2025.git"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}

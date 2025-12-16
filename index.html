@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Sistem Audit Mutu Internal - Politeknik Enjiniring Pertanian Indonesia">
+    <meta name="keywords" content="audit, mutu, internal, PEPI, politeknik">
+    <meta name="author" content="PEPI">
+    <meta name="theme-color" content="#1e40af">
+    <title>Sistem Audit Mutu Internal PEPI</title>
+    
+    <!-- CSS External -->
+    <link rel="stylesheet" href="css/style.css">
+    
+    <!-- React & Babel -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS for additional styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons (for backward compatibility) -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        // PASTE SEMUA CODE DARI ARTIFACT DI SINI
+        // (Copy dari baris "import React..." sampai "export default AuditSystem;")
+        import React, { useState, useEffect } from 'react';
+import { FileText, Download, Upload, LogOut, CheckCircle, XCircle, AlertCircle, User, Lock, ArrowRight, ClipboardCheck, TrendingUp, Eye, Edit2, Calendar } from 'lucide-react';
+
+// Data Master
+const PROGRAM_STUDI = {
+  TAP: {
+    name: 'Program Studi TAP',
+    auditee: 'Program Studi TAP',
+    auditors: ['Dr. Mardison S.Si., TP., M.Si.', 'Dwi Rahayu, S.TP,M.Sc']
+  },
+  TMP: {
+    name: 'Program Studi TMP',
+    auditee: 'Program Studi TMP',
+    auditors: ['Dr. Mona Nur Moulia', 'Dr. Rahmat Hanif Anasiru, M.Eng.']
+  },
+  THP: {
+    name: 'Program Studi THP',
+    auditee: 'Program Studi THP',
+    auditors: ['Athoillah Aqadi, S.TP.MT', 'Dr. Audy Saryoko, S.P., M.P.']
+  }
+};
+
+const AuditSystem = () => {
+  const [currentUser, setCurrentUser] = useState(null);
+  const [loginView, setLoginView] = useState(true);
+  const [audits, setAudits] = useState([]);
+  const [currentView, setCurrentView] = useState('dashboard');
+  const [editingAudit, setEditingAudit] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (currentUser) {
+      loadAudits();
+    }
+  }, [currentUser]);
+
+  const loadAudits = async () => {
+    try {
+      setLoading(true);
+      const result = await window.storage.list('audit:', true);
+      if (result && result.keys) {
+        const auditPromises = result.keys.map(async (key) => {
+          const data = await window.storage.get(key, true);
+          return data ? JSON.parse(data.value) : null;
+        });
+        const loadedAudits = (await Promise.all(auditPromises)).filter(Boolean);
+        
+        // Filter based on role
+        const filtered = currentUser.role === 'auditee' 
+          ? loadedAudits.filter(a => a.prodi === currentUser.prodi)
+          : currentUser.role === 'auditor'
+          ? loadedAudits.filter(a => a.prodi === currentUser.prodi)
+          : loadedAudits;
+        
+        setAudits(filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+      }
+    } catch (error) {
+      console.log('No existing audits found');
+      setAudits([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogin = (role, prodi) => {
+    const user = {
+      role,
+      prodi,
+      name: role === 'auditee' ? PROGRAM_STUDI[prodi].auditee : PROGRAM_STUDI[prodi].auditors[0]
+    };
+    setCurrentUser(user);
+    setLoginView(false);
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setLoginView(true);
+    setCurrentView('dashboard');
+    setEditingAudit(null);
+  };
+
+  const createNewAudit = () => {
+    const newAudit = {
+      id: `audit_${Date.now()}`,
+      prodi: currentUser.prodi,
+      prodiName: PROGRAM_STUDI[currentUser.prodi].name,
+      auditee: PROGRAM_STUDI[currentUser.prodi].auditee,
+      auditors: PROGRAM_STUDI[currentUser.prodi].auditors,
+      tanggal: new Date().toISOString().split('T')[0],
+      waktu: '09.00 s.d. selesai',
+      tempat: `Ruang Kaprodi ${currentUser.prodi}`,
+      ruangLingkup: 'STANDAR PENDIDIKAN 1-4',
+      status: 'draft',
+      createdAt: new Date().toISOString(),
+      standar1: initStandar1(),
+      standar2: initStandar2(),
+      standar3: initStandar3(),
+      standar4: initStandar4(),
+    };
+    setEditingAudit(newAudit);
+    setCurrentView('form');
+  };
+
+  const saveAudit = async () => {
+    try {
+      const auditToSave = {
+        ...editingAudit,
+        status: currentUser.role === 'auditee' ? 'submitted' : 'completed',
+        lastUpdated: new Date().toISOString()
+      };
+      await window.storage.set(`audit:${auditToSave.id}`, JSON.stringify(auditToSave), true);
+      await loadAudits();
+      setCurrentView('dashboard');
+      setEditingAudit(null);
+      alert('Audit berhasil disimpan!');
+    } catch (error) {
+      alert('Gagal menyimpan audit: ' + error.message);
+    }
+  };
+
+  const calculatePLOR = (audit) => {
+    let totalItems = 0;
+    let tersedia = 0;
+    let tidakTersedia = 0;
+    let menyimpang = 0;
+
+    ['standar1', 'standar2', 'standar3', 'standar4'].forEach(standar => {
+      audit[standar].forEach(item => {
+        if (item.status) {
+          totalItems++;
+          if (item.status === 'tersedia') tersedia++;
+          else if (item.status === 'tidak_tersedia') tidakTersedia++;
+          else if (item.status === 'menyimpang') menyimpang++;
+        }
+      });
+    });
+
+    const percentage = totalItems > 0 ? (tersedia / totalItems) * 100 : 0;
+    
+    let kesimpulan = '';
+    let color = '';
+    let recommendation = '';
+
+    if (percentage >= 90) {
+      kesimpulan = 'OUTSTANDING (O)';
+      color = 'text-green-600';
+      recommendation = 'Program Studi telah memenuhi standar dengan sangat baik. Pertahankan dan tingkatkan praktik terbaik yang telah dilaksanakan.';
+    } else if (percentage >= 75) {
+      kesimpulan = 'LAIK (L)';
+      color = 'text-blue-600';
+      recommendation = 'Program Studi telah memenuhi standar dengan baik. Lakukan perbaikan pada beberapa area yang masih kurang.';
+    } else if (percentage >= 50) {
+      kesimpulan = 'PERLU PERBAIKAN (P)';
+      color = 'text-yellow-600';
+      recommendation = 'Program Studi perlu melakukan perbaikan signifikan pada beberapa standar yang belum terpenuhi.';
+    } else {
+      kesimpulan = 'REKOMENDASI PERBAIKAN MENYELURUH (R)';
+      color = 'text-red-600';
+      recommendation = 'Program Studi memerlukan perbaikan menyeluruh pada seluruh aspek standar yang belum terpenuhi.';
+    }
+
+    return { kesimpulan, percentage, color, recommendation, tersedia, tidakTersedia, menyimpang, totalItems };
+  };
+
+  if (loginView) {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
+      {/* Header */}
+      <header className="bg-white shadow-lg border-b-4 border-blue-600">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center">
+                <ClipboardCheck className="text-white" size={28} />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-800">Sistem Audit Mutu Internal</h1>
+                <p className="text-sm text-gray-600">Politeknik Enjiniring Pertanian Indonesia</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <p className="text-sm font-medium text-gray-800">{currentUser.name}</p>
+                <p className="text-xs text-gray-600 capitalize">{currentUser.role} - {currentUser.prodi}</p>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all"
+              >
+                <LogOut size={18} />
+                Keluar
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        {currentView === 'dashboard' && (
+          <Dashboard 
+            audits={audits}
+            currentUser={currentUser}
+            onCreateNew={createNewAudit}
+            onView={(audit) => { setEditingAudit(audit); setCurrentView('view'); }}
+            onEdit={(audit) => { setEditingAudit(audit); setCurrentView('form'); }}
+            loading={loading}
+          />
+        )}
+
+        {currentView === 'form' && (
+          <AuditForm
+            audit={editingAudit}
+            currentUser={currentUser}
+            onUpdate={setEditingAudit}
+            onSave={saveAudit}
+            onCancel={() => { setCurrentView('dashboard'); setEditingAudit(null); }}
+          />
+        )}
+
+        {currentView === 'view' && (
+          <AuditView
+            audit={editingAudit}
+            onClose={() => { setCurrentView('dashboard'); setEditingAudit(null); }}
+            calculatePLOR={calculatePLOR}
+          />
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Login Screen Component
+const LoginScreen = ({ onLogin }) => {
+  const [selectedRole, setSelectedRole] = useState('');
+  const [selectedProdi, setSelectedProdi] = useState('');
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
+        <div className="text-center mb-8">
+          <div className="w-20 h-20 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <ClipboardCheck className="text-white" size={40} />
+          </div>
+          <h2 className="text-3xl font-bold text-gray-800 mb-2">Sistem Audit PEPI</h2>
+          <p className="text-gray-600">Silakan login untuk melanjutkan</p>
+        </div>
+
+        <div className="space-y-6">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Role</label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => setSelectedRole('auditee')}
+                className={`p-4 rounded-lg border-2 transition-all ${
+                  selectedRole === 'auditee'
+                    ? 'border-blue-600 bg-blue-50'
+                    : 'border-gray-200 hover:border-blue-300'
+                }`}
+              >
+                <User className={`mx-auto mb-2 ${selectedRole === 'auditee' ? 'text-blue-600' : 'text-gray-400'}`} size={32} />
+                <p className="font-medium text-sm">Auditee</p>
+              </button>
+              <button
+                onClick={() => setSelectedRole('auditor')}
+                className={`p-4 rounded-lg border-2 transition-all ${
+                  selectedRole === 'auditor'
+                    ? 'border-blue-600 bg-blue-50'
+                    : 'border-gray-200 hover:border-blue-300'
+                }`}
+              >
+                <ClipboardCheck className={`mx-auto mb-2 ${selectedRole === 'auditor' ? 'text-blue-600' : 'text-gray-400'}`} size={32} />
+                <p className="font-medium text-sm">Auditor</p>
+              </button>
+            </div>
+          </div>
+
+          {selectedRole && (
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Program Studi</label>
+              <div className="space-y-2">
+                {Object.entries(PROGRAM_STUDI).map(([key, value]) => (
+                  <button
+                    key={key}
+                    onClick={() => setSelectedProdi(key)}
+                    className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
+                      selectedProdi === key
+                        ? 'border-blue-600 bg-blue-50'
+                        : 'border-gray-200 hover:border-blue-300'
+                    }`}
+                  >
+                    <p className="font-semibold text-gray-800">{value.name}</p>
+                    <p className="text-sm text-gray-600 mt-1">
+                      {selectedRole === 'auditee' ? value.auditee : value.auditors.join(', ')}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {selectedRole && selectedProdi && (
+            <button
+              onClick={() => onLogin(selectedRole, selectedProdi)}
+              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-4 rounded-lg font-semibold hover:shadow-lg transition-all"
+            >
+              Masuk
+              <ArrowRight size={20} />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Dashboard Component
+const Dashboard = ({ audits, currentUser, onCreateNew, onView, onEdit, loading }) => {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Memuat data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-8">
+        <div>
+          <h2 className="text-3xl font-bold text-gray-800">Dashboard Audit</h2>
+          <p className="text-gray-600 mt-1">Kelola dan pantau audit mutu internal</p>
+        </div>
+        {currentUser.role === 'auditee' && (
+          <button
+            onClick={onCreateNew}
+            className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-3 rounded-lg hover:shadow-lg transition-all font-semibold"
+          >
+            <Upload size={20} />
+            Upload Dokumen Baru
+          </button>
+        )}
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <StatCard
+          icon={<FileText />}
+          label="Total Audit"
+          value={audits.length}
+          color="bg-blue-500"
+        />
+        <StatCard
+          icon={<CheckCircle />}
+          label="Selesai"
+          value={audits.filter(a => a.status === 'completed').length}
+          color="bg-green-500"
+        />
+        <StatCard
+          icon={<Upload />}
+          label="Submitted"
+          value={audits.filter(a => a.status === 'submitted').length}
+          color="bg-yellow-500"
+        />
+        <StatCard
+          icon={<Edit2 />}
+          label="Draft"
+          value={audits.filter(a => a.status === 'draft').length}
+          color="bg-gray-500"
+        />
+      </div>
+
+      {/* Audit List */}
+      <div className="bg-white rounded-xl shadow-lg p-6">
+        <h3 className="text-xl font-bold text-gray-800 mb-4">Daftar Audit</h3>
+        {audits.length === 0 ? (
+          <div className="text-center py-12">
+            <FileText size={64} className="mx-auto text-gray-300 mb-4" />
+            <p className="text-gray-500 mb-4">Belum ada data audit</p>
+            {currentUser.role === 'auditee' && (
+              <button
+                onClick={onCreateNew}
+                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
+              >
+                Buat Audit Pertama
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {audits.map((audit) => (
+              <div key={audit.id} className="border-2 border-gray-200 rounded-lg p-5 hover:shadow-md transition-all hover:border-blue-300">
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <h4 className="font-bold text-lg text-gray-800">{audit.prodiName}</h4>
+                      <StatusBadge status={audit.status} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm text-gray-600">
+                      <p><span className="font-medium">Tanggal:</span> {new Date(audit.tanggal).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                      <p><span className="font-medium">Waktu:</span> {audit.waktu}</p>
+                      <p><span className="font-medium">Tempat:</span> {audit.tempat}</p>
+                      <p><span className="font-medium">Ruang Lingkup:</span> {audit.ruangLingkup}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => onView(audit)}
+                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      title="Lihat Detail"
+                    >
+                      <Eye size={20} />
+                    </button>
+                    {((currentUser.role === 'auditee' && audit.status === 'draft') ||
+                      (currentUser.role === 'auditor' && audit.status === 'submitted')) && (
+                      <button
+                        onClick={() => onEdit(audit)}
+                        className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                        title="Edit/Nilai"
+                      >
+                        <Edit2 size={20} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Stat Card Component
+const StatCard = ({ icon, label, value, color }) => (
+  <div className="bg-white rounded-xl shadow-lg p-6 border-l-4" style={{ borderColor: color.replace('bg-', '') }}>
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-gray-600 text-sm font-medium">{label}</p>
+        <p className="text-3xl font-bold text-gray-800 mt-1">{value}</p>
+      </div>
+      <div className={`${color} p-3 rounded-lg text-white`}>
+        {icon}
+      </div>
+    </div>
+  </div>
+);
+
+// Status Badge Component
+const StatusBadge = ({ status }) => {
+  const badges = {
+    draft: { label: 'Draft', color: 'bg-gray-100 text-gray-800' },
+    submitted: { label: 'Submitted', color: 'bg-yellow-100 text-yellow-800' },
+    completed: { label: 'Selesai', color: 'bg-green-100 text-green-800' }
+  };
+  const badge = badges[status] || badges.draft;
+  return (
+    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${badge.color}`}>
+      {badge.label}
+    </span>
+  );
+};
+
+// Audit Form Component
+const AuditForm = ({ audit, currentUser, onUpdate, onSave, onCancel }) => {
+  const isAuditee = currentUser.role === 'auditee';
+
+  return (
+    <div className="bg-white rounded-xl shadow-lg p-8">
+      <div className="flex justify-between items-center mb-8">
+        <div>
+          <h2 className="text-3xl font-bold text-gray-800">
+            {isAuditee ? 'Upload Dokumen Audit' : 'Penilaian Audit'}
+          </h2>
+          <p className="text-gray-600 mt-1">{audit.prodiName}</p>
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={onSave}
+            className="flex items-center gap-2 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 font-semibold transition-all"
+          >
+            <CheckCircle size={20} />
+            {isAuditee ? 'Submit' : 'Simpan Penilaian'}
+          </button>
+          <button
+            onClick={onCancel}
+            className="flex items-center gap-2 bg-gray-600 text-white px-6 py-3 rounded-lg hover:bg-gray-700 font-semibold transition-all"
+          >
+            Batal
+          </button>
+        </div>
+      </div>
+
+      {/* Info Section */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200">
+        <InfoField label="Auditee" value={audit.auditee} />
+        <InfoField label="Auditor" value={audit.auditors.join(', ')} />
+        <InfoField label="Tanggal" value={new Date(audit.tanggal).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })} />
+        <InfoField label="Waktu" value={audit.waktu} />
+        <InfoField label="Tempat" value={audit.tempat} />
+        <InfoField label="Ruang Lingkup" value={audit.ruangLingkup} />
+      </div>
+
+      {/* Standards */}
+      <StandardSection
+        title="1. STANDAR KOMPETENSI LULUSAN"
+        items={audit.standar1}
+        onUpdate={(index, field, value) => {
+          const updated = { ...audit };
+          updated.standar1[index][field] = value;
+          onUpdate(updated);
+        }}
+        isAuditee={isAuditee}
+      />
+      <StandardSection
+        title="2. STANDAR ISI PEMBELAJARAN"
+        items={audit.standar2}
+        onUpdate={(index, field, value) => {
+          const updated = { ...audit };
+          updated.standar2[index][field] = value;
+          onUpdate(updated);
+        }}
+        isAuditee={isAuditee}
+      />
+      <StandardSection
+        title="3. STANDAR PROSES PEMBELAJARAN"
+        items={audit.standar3}
+        onUpdate={(index, field, value) => {
+          const updated = { ...audit };
+          updated.standar3[index][field] = value;
+          onUpdate(updated);
+        }}
+        isAuditee={isAuditee}
+      />
+      <StandardSection
+        title="4. STANDAR PENILAIAN PEMBELAJARAN"
+        items={audit.standar4}
+        onUpdate={(index, field, value) => {
+          const updated = { ...audit };
+          updated.standar4[index][field] = value;
+          onUpdate(updated);
+        }}
+        isAuditee={isAuditee}
+      />
+    </div>
+  );
+};
+
+// Info Field Component
+const InfoField = ({ label, value }) => (
+  <div>
+    <p className="text-sm font-semibold text-gray-700 mb-1">{label}</p>
+    <p className="text-gray-800">{value}</p>
+  </div>
+);
+
+// Standard Section Component
+const StandardSection = ({ title, items, onUpdate, isAuditee }) => (
+  <div className="mb-8">
+    <h3 className="text-xl font-bold mb-4 text-white bg-gradient-to-r from-blue-600 to-indigo-600 p-4 rounded-lg shadow-md">
+      {title}
+    </h3>
+    <div className="space-y-4">
+      {items.map((item, index) => (
+        <div key={index} className="bg-gray-50 border-2 border-gray-200 rounded-lg p-5 hover:border-blue-300 transition-all">
+          <div className="flex gap-4 items-start mb-4">
+            <span className="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">
+              {index + 1}
+            </span>
+            <p className="flex-1 text-gray-800 font-medium leading-relaxed">{item.indikator}</p>
+          </div>
+          
+          <div className="ml-12 space-y-4">
+            {/* Link Upload (Auditee) */}
+            {isAuditee && (
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Link Dokumen (Google Drive)
+                </label>
+                <input
+                  type="url"
+                  value={item.linkDokumen || ''}
+                  onChange={(e) => onUpdate(index, 'linkDokumen', e.target.value)}
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="https://drive.google.com/..."
+                />
+              </div>
+            )}
+
+            {/* Status (Auditor) */}
+            {!isAuditee && (
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Status Penilaian</label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer px-4 py-2 border-2 rounded-lg hover:bg-green-50 transition-all">
+                    <input
+                      type="radio"
+                      name={`status-${title}-${index}`}
+                      value="tersedia"
+                      checked={item.status === 'tersedia'}
+                      onChange={(e) => onUpdate(index, 'status', e.target.value)}
+                      className="w-4 h-4"
+                    />
+                    <CheckCircle size={18} className="text-green-600" />
+                    <span className="font-medium">Tersedia</span>
+                  </label>
+                  
+                  <label className="flex items-center gap-2 cursor-pointer px-4 py-2 border-2 rounded-lg hover:bg-red-50 transition-all">
+                    <input
+                      type="radio"
+                      name={`status-${title}-${index}`}
+                      value="tidak_tersedia"
+                      checked={item.status === 'tidak_tersedia'}
+                      onChange={(e) => onUpdate(index, 'status', e.target.value)}
+                      className="w-4 h-4"
+                    />
+                    <XCircle size={18} className="text-red-600" />
+                    <span className="font-medium">Tidak Tersedia</span>
+                  </label>
+                  
+                  <label className="flex items-center gap-2 cursor-pointer px-4 py-2 border-2 rounded-lg hover:bg-yellow-50 transition-all">
+                    <input
+                      type="radio"
+                      name={`status-${title}-${index}`}
+                      value="menyimpang"
+                      checked={item.status === 'menyimpang'}
+                      onChange={(e) => onUpdate(index, 'status', e.target.value)}
+                      className="w-4 h-4"
+                    />
+                    <AlertCircle size={18} className="text-yellow-600" />
+                    <span className="font-medium">Menyimpang</span>
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {/* Catatan */}
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                {isAuditee ? 'Catatan' : 'Catatan Auditor'}
+              </label>
+              <textarea
+                value={item.catatan || ''}
+                onChange={(e) => onUpdate(index, 'catatan', e.target.value)}
+                rows={3}
+                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder={isAuditee ? "Tambahkan catatan jika diperlukan..." : "Masukkan catatan hasil audit..."}
+              />
+            </div>
+
+            {/* Show link for auditor */}
+            {!isAuditee && item.linkDokumen && (
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Dokumen yang Diupload</label>
+                <a
+                  href={item.linkDokumen}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  <FileText size={16} />
+                  Lihat Dokumen
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+// Audit View Component
+const AuditView = ({ audit, onClose, calculatePLOR }) => {
+  const plorResult = calculatePLOR(audit);
+
+  return (
+    <div className="bg-white rounded-xl shadow-lg p-8">
+      <div className="flex justify-between items-center mb-8">
+        <div>
+          <h2 className="text-3xl font-bold text-gray-800">Detail Audit</h2>
+          <p className="text-gray-600 mt-1">{audit.prodiName}</p>
+        </div>
+        <button
+          onClick={onClose}
+          className="bg-gray-600 text-white px-6 py-3 rounded-lg hover:bg-gray-700 font-semibold"
+        >
+          Tutup
+        </button>
+      </div>
+
+      {/* Info Section */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200">
+        <InfoField label="Auditee" value={audit.auditee} />
+        <InfoField label="Auditor" value={audit.auditors.join(', ')} />
+        <InfoField label="Tanggal" value={new Date(audit.tanggal).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })} />
+        <InfoField label="Waktu" value={audit.waktu} />
+        <InfoField label="Tempat" value={audit.tempat} />
+        <InfoField label="Status" value={<StatusBadge status={audit.status} />} />
+      </div>
+
+      {/* PLOR Summary */}
+      {audit.status === 'completed' && (
+        <div className="mb-8 p-8 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl text-white shadow-xl">
+          <div className="flex items-center gap-4 mb-6">
+            <TrendingUp size={40} />
+            <div>
+              <h3 className="text-2xl font-bold">Hasil Penilaian PLOR</h3>
+              <p className="text-blue-100">Politeknik Enjiniring Pertanian Indonesia</p>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-6">
+              <p className="text-blue-100 mb-2">Kesimpulan</p>
+              <p className="text-3xl font-bold">{plorResult.kesimpulan}</p>
+            </div>
+            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-6">
+              <p className="text-blue-100 mb-2">Persentase Kepatuhan</p>
+              <p className="text-3xl font-bold">{plorResult.percentage.toFixed(1)}%</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-4 gap-4 mt-6">
+            <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4 text-center">
+              <p className="text-blue-100 text-sm mb-1">Total Item</p>
+              <p className="text-2xl font-bold">{plorResult.totalItems}</p>
+            </div>
+            <div className="bg-green-500/20 backdrop-blur-sm rounded-lg p-4 text-center">
+              <p className="text-blue-100 text-sm mb-1">Tersedia</p>
+              <p className="text-2xl font-bold">{plorResult.tersedia}</p>
+            </div>
+            <div className="bg-red-500/20 backdrop-blur-sm rounded-lg p-4 text-center">
+              <p className="text-blue-100 text-sm mb-1">Tidak Tersedia</p>
+              <p className="text-2xl font-bold">{plorResult.tidakTersedia}</p>
+            </div>
+            <div className="bg-yellow-500/20 backdrop-blur-sm rounded-lg p-4 text-center">
+              <p className="text-blue-100 text-sm mb-1">Menyimpang</p>
+              <p className="text-2xl font-bold">{plorResult.menyimpang}</p>
+            </div>
+          </div>
+
+          <div className="mt-6 p-4 bg-white/10 backdrop-blur-sm rounded-lg">
+            <p className="font-semibold mb-2">Rekomendasi:</p>
+            <p className="text-blue-100 leading-relaxed">{plorResult.recommendation}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Standards Detail */}
+      <ViewStandardSection title="1. STANDAR KOMPETENSI LULUSAN" items={audit.standar1} />
+      <ViewStandardSection title="2. STANDAR ISI PEMBELAJARAN" items={audit.standar2} />
+      <ViewStandardSection title="3. STANDAR PROSES PEMBELAJARAN" items={audit.standar3} />
+      <ViewStandardSection title="4. STANDAR PENILAIAN PEMBELAJARAN" items={audit.standar4} />
+    </div>
+  );
+};
+
+// View Standard Section Component
+const ViewStandardSection = ({ title, items }) => (
+  <div className="mb-8">
+    <h3 className="text-xl font-bold mb-4 text-white bg-gradient-to-r from-blue-600 to-indigo-600 p-4 rounded-lg">
+      {title}
+    </h3>
+    <div className="space-y-4">
+      {items.map((item, index) => (
+        <div key={index} className="bg-gray-50 border-2 border-gray-200 rounded-lg p-5">
+          <div className="flex gap-4 items-start mb-3">
+            <span className="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">
+              {index + 1}
+            </span>
+            <p className="flex-1 text-gray-800 font-medium">{item.indikator}</p>
+          </div>
+          
+          <div className="ml-12 space-y-3">
+            {item.linkDokumen && (
+              <div>
+                <p className="text-sm font-semibold text-gray-700 mb-1">Dokumen:</p>
+                <a
+                  href={item.linkDokumen}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  <FileText size={16} />
+                  Lihat Dokumen
+                </a>
+              </div>
+            )}
+            
+            {item.status && (
+              <div className="flex items-center gap-2">
+                {item.status === 'tersedia' && (
+                  <span className="inline-flex items-center gap-2 px-4 py-2 bg-green-100 text-green-800 rounded-lg font-semibold">
+                    <CheckCircle size={18} />
+                    Tersedia
+                  </span>
+                )}
+                {item.status === 'tidak_tersedia' && (
+                  <span className="inline-flex items-center gap-2 px-4 py-2 bg-red-100 text-red-800 rounded-lg font-semibold">
+                    <XCircle size={18} />
+                    Tidak Tersedia
+                  </span>
+                )}
+                {item.status === 'menyimpang' && (
+                  <span className="inline-flex items-center gap-2 px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg font-semibold">
+                    <AlertCircle size={18} />
+                    Menyimpang
+                  </span>
+                )}
+              </div>
+            )}
+            
+            {item.catatan && (
+              <div className="bg-white p-4 rounded-lg border border-gray-300">
+                <p className="text-sm font-semibold text-gray-700 mb-1">Catatan:</p>
+                <p className="text-gray-700">{item.catatan}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+// Initialize data functions
+const initStandar1 = () => [
+  { indikator: 'Program studi memiliki dokumen penetapan profil lulusan.', status: '', catatan: '', linkDokumen: '' },
+  { indikator: 'Program studi memiliki dokumen evaluasi kurikulum dan kompetensi lulusan.', status: '', catatan: '', linkDokumen: '' },
+  { indikator: 'Program studi memiliki panduan perumusan capaian pembelajaran yang mengacu pada SN-DIKTI dan KKNI level 5.', status: '', catatan: '', linkDokumen: '' },
+  { indikator: 'Program studi memiliki dokumen hasil peninjauan kesesuaian capaian pembelajaran lulusan dengan SN-DIKTI dan KKNI level 5.', status: '', catatan: '', linkDokumen: '' },
+  { indikator: 'Program studi memiliki dokumen kompetensi lulusan sebagai pedoman penyusunan capaian pembelajaran untuk perancangan RPS.', status: '', catatan: '', linkDokumen: '' },
+  { indikator: 'Program studi memiliki dokumen evaluasi capaian pembelajaran lulusan.', status: '', catatan: '', linkDokumen: '' },
+  { indikator: 'Program studi memiliki dokumen hasil evaluasi kompetensi lulusan dan tingkat kepuasan pengguna lulusan.', status: '', catatan: '', linkDokumen: '' },
+];
+
+const initStandar2 = () => [
+  { indikator: 'Program studi memiliki kebijakan pengembangan kurikulum yang mempertimbangkan keterkaitan antara visi dan misi dengan pengembangan ilmu pengetahuan dan teknologi.', status: '', catatan: '', linkDokumen: '' },
+  { indikator: 'Program studi memiliki pedoman pengembangan kurikulum yang memuat profil lulusan, capaian pembelajaran, bahan kajian, struktur kurikulum dan RPS.', status: '', catatan: '', linkDokumen: '' },
+  { indikator: 'Program studi memiliki pedoman implementasi kurikulum yang mencakup perencanaan, pelaksanaan, pemantauan, dan peninjauan kurikulum.', status: '', catatan: '', linkDokumen: '' },
+  { indikator: 'Program studi memiliki pedoman tertulis tentang kedalaman dan keluasan materi pembelajaran.', status: '', catatan: '', linkDokumen: '' },
+  { indikator: 'Program studi memiliki RPS yang up to date pada semua mata kuliah yang diajarkan pada setiap program studi.', status: '', catatan: '', linkDokumen: '' },
+];
+
+const initStandar3 = () => [
+  { indikator: 'Penerbitan Surat Keputusan Direktur tentang standar proses pembelajaran.', status: '', catatan: '', linkDokumen: '' },
+  { indikator: 'Penerbitan Surat Keputusan Direktur tentang dosen pengampu mata kuliah sebelum Tahun Akademik dimulai.', status: '', catatan: '', linkDokumen: '' },
+  { indikator: 'Penerbitan Surat Keputusan Direktur tentang jadwal kuliah untuk setiap semester.', status: '', catatan: '', linkDokumen: '' },
+  { indikator: 'Tersusunnya RPS, SAP dan AP setiap mata kuliah oleh dosen pengampu mata kuliah.', status: '', catatan: '', linkDokumen: '' },
+  { indikator: 'Setiap mahasiswa membuat rencana studi yang tercatat pada KRS yang disetujui oleh dosen PA.', status: '', catatan: '', linkDokumen: '' },
+  { indikator: 'Tersusunnya kontrak perkuliahan antara tim dosen pengampu mata kuliah dengan mahasiswa.', status: '', catatan: '', linkDokumen: '' },
+  { indikator: 'Tersusunnya laporan yudisium hasil pembelajaran pada setiap akhir semester.', status: '', catatan: '', linkDokumen: '' },
+  { indikator: 'Tersedianya rekapitulasi dokumen kartu hasil studi (KHS) mahasiswa di setiap Program studi.', status: '', catatan: '', linkDokumen: '' },
+];
+
+const initStandar4 = () => [
+  { indikator: 'Ditetapkannya standar penilaian pembelajaran.', status: '', catatan: '', linkDokumen: '' },
+  { indikator: 'Terlaksanakannya sosialisasi standar penilaian pembelajaran.', status: '', catatan: '', linkDokumen: '' },
+  { indikator: 'Terlaksanakannya monev standar penilaian pembelajaran melalui validasi soal UAS.', status: '', catatan: '', linkDokumen: '' },
+  { indikator: 'Terlaksanakannya pemantauan secara berkala oleh ketua Program studi terhadap penilaian pembelajaran yang dilakukan dosen.', status: '', catatan: '', linkDokumen: '' },
+  { indikator: 'Terlaksanakannya evaluasi capaian pembelajaran.', status: '', catatan: '', linkDokumen: '' },
+];
+
+export default AuditSystem;
+    </script>
+</body>
+</html>
